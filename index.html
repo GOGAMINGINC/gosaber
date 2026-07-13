@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GOSABER — Proof of Concept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Nunito', -apple-system, 'Segoe UI', Roboto, sans-serif; background:#1c1f26; color:#fff; overflow:hidden; }
+  #logo { position:fixed; top:14px; left:20px; z-index:20; font-family:'Fredoka', sans-serif;
+          font-weight:700; font-size:32px; letter-spacing:-.5px; color:#fff;
+          text-shadow:0 3px 0 #10233F, 3px 3px 0 rgba(16,35,63,.25); }
+  #logo span { color:#FFC93C; }
+  #hostUI { display:none; }
+  #canvasWrap { position:fixed; inset:0; }
+  #connectPanel { position:fixed; inset:0; z-index:10; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:16px; overflow-y:auto; padding:24px;
+    background:radial-gradient(ellipse at 50% -10%, #4b2a6b 0%, #2a2340 55%, #1c1f26 100%); }
+  #connectPanel .strip { position:absolute; top:0; left:0; right:0; height:16px;
+    background:conic-gradient(#10233F 90deg,#f2f4f7 0 180deg,#10233F 0 270deg,#f2f4f7 0) 0 0 / 16px 16px; }
+  #qr { background:#fff; padding:16px; border-radius:26px; border:4px solid #10233F; box-shadow:0 10px 0 rgba(0,0,0,.35); }
+  button { transition: transform .08s ease, box-shadow .08s ease; cursor:pointer; }
+  button:active { transform: scale(.96); }
+  #joinCode { display:inline-block; font-family:'Fredoka', sans-serif; font-weight:700; font-size:44px; letter-spacing:10px;
+    color:#10233F; background:#FFC93C; border:4px solid #10233F; border-radius:18px; padding:8px 14px 8px 24px; box-shadow:0 6px 0 rgba(0,0,0,.35); }
+  .hint { color:rgba(255,255,255,.9); font-weight:700; font-size:15px; max-width:440px; text-align:center; line-height:1.5; }
+  .slots { display:flex; gap:16px; }
+  .slot { width:170px; background:rgba(255,255,255,.08); border:3px solid #10233F; border-radius:18px; padding:14px; text-align:center;
+    box-shadow:0 5px 0 rgba(0,0,0,.3); }
+  .slot .who { font-family:'Fredoka',sans-serif; font-weight:700; font-size:18px; margin-top:6px; }
+  .slot .dot { width:26px; height:26px; border-radius:50%; margin:0 auto; border:3px solid #10233F; }
+  .cta { font-family:'Fredoka',sans-serif; font-weight:700; font-size:20px; padding:14px 30px; border:3px solid #10233F; border-radius:100px; }
+  #startBtn { background:#FF5A5F; color:#fff; box-shadow:0 6px 0 #c9353a; }
+  #botBtn { background:#FFC93C; color:#10233F; box-shadow:0 6px 0 #e0a916; font-size:16px; padding:12px 24px; }
+  #hostNetStatus { font-weight:800; font-size:12px; color:#b9b0d6; }
+  /* health / round HUD */
+  #hud { position:fixed; top:0; left:0; right:0; z-index:16; display:none; padding:16px 20px 0; pointer-events:none; }
+  .hpwrap { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; }
+  .hpside { width:42%; }
+  .hpside.right { text-align:right; }
+  .hpname { font-family:'Fredoka',sans-serif; font-weight:700; font-size:22px; text-shadow:0 2px 0 #10233F; display:flex; align-items:center; gap:8px; }
+  .hpside.right .hpname { justify-content:flex-end; }
+  .hpname .pdot { width:16px; height:16px; border-radius:50%; border:2px solid #10233F; }
+  .hpbar { height:20px; margin-top:6px; border:3px solid #10233F; border-radius:100px; background:#10233F; overflow:hidden; box-shadow:0 4px 0 rgba(0,0,0,.35); }
+  .hpfill { height:100%; width:100%; border-radius:100px; transition:width .18s ease; }
+  .pips { margin-top:8px; display:flex; gap:6px; }
+  .hpside.right .pips { justify-content:flex-end; }
+  .pip { width:16px; height:16px; border-radius:50%; border:2px solid #10233F; background:rgba(255,255,255,.15); }
+  .pip.win { background:#FFC93C; }
+  #roundLabel { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:16; font-family:'Fredoka',sans-serif;
+    font-weight:700; font-size:18px; color:#fff; background:#10233F; padding:6px 18px; border-radius:100px; border:3px solid #000; display:none; }
+  #bigMsg { position:fixed; left:50%; top:40%; transform:translate(-50%,-50%); font-family:'Fredoka', sans-serif; font-weight:700;
+    font-size:70px; color:#fff; text-shadow:0 5px 0 #10233F, 0 8px 22px rgba(0,0,0,.4); z-index:15; display:none; text-align:center; line-height:1.1; }
+  #stateMsg { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); font-size:17px; font-weight:800; color:#fff;
+    background:#10233F; padding:12px 26px; border-radius:100px; z-index:15; box-shadow:0 5px 0 rgba(0,0,0,.4); white-space:nowrap; }
+  /* ---------- PHONE ---------- */
+  #phoneUI { display:none; min-height:100vh; padding:22px; flex-direction:column; align-items:center; justify-content:center; gap:20px;
+    text-align:center; touch-action:none;
+    background:radial-gradient(ellipse at 50% -12%, #4b2a6b 0%, #2a2340 50%, #1c1f26 100%); }
+  #phoneStatus { font-size:15px; font-weight:700; color:rgba(255,255,255,.92); }
+  .bigbtn { font-family:'Fredoka', sans-serif; font-size:22px; font-weight:700; padding:18px 34px; border:3px solid #10233F; border-radius:100px;
+    background:#FF5A5F; color:#fff; width:100%; max-width:340px; box-shadow:0 6px 0 #c9353a; user-select:none; -webkit-user-select:none; }
+  .bigbtn:active { transform: translateY(3px); box-shadow:0 3px 0 #c9353a; }
+  #saberVis { width:52px; height:230px; border-radius:100px; background:linear-gradient(#fff,#FF5A5F); border:4px solid #10233F;
+    box-shadow:0 0 26px rgba(255,90,95,.8); transition:transform .06s linear; }
+  #blockBtn { font-family:'Fredoka',sans-serif; font-size:30px; font-weight:700; padding:30px 0; width:100%; max-width:340px;
+    border:4px solid #10233F; border-radius:24px; background:#10233F; color:#fff; box-shadow:0 7px 0 #000; user-select:none; -webkit-user-select:none; }
+  #blockBtn.on { background:#6fd3ff; color:#10233F; transform:translateY(4px); box-shadow:0 3px 0 rgba(0,0,0,.4); }
+  #phoneResult { font-family:'Fredoka',sans-serif; font-size:30px; font-weight:700; color:#fff; min-height:38px; text-shadow:0 3px 0 #10233F; }
+</style>
+</head>
+<body>
+<div id="logo">Go<span>Saber</span> <small style="font-family:'Nunito',sans-serif;font-size:11px;font-weight:800;letter-spacing:.5px;color:rgba(255,255,255,.7);vertical-align:middle">PROOF OF CONCEPT</small></div>
+
+<!-- HOST -->
+<div id="hostUI">
+  <div id="canvasWrap"></div>
+  <div id="connectPanel">
+    <div class="strip"></div>
+    <div style="background:#FF5A5F;color:#fff;font-weight:900;font-size:13px;letter-spacing:.1em;padding:9px 18px;border-radius:100px;border:3px solid #10233F;box-shadow:0 4px 0 rgba(0,0,0,.3)">⚔️ YOUR PHONE IS THE SABER</div>
+    <div style="font-family:'Fredoka',sans-serif;font-weight:600;font-size:30px;color:#fff;text-shadow:0 3px 0 rgba(0,0,0,.4)">Scan to duel!</div>
+    <div id="qr"></div>
+    <div style="font-family:'Nunito',sans-serif;font-weight:900;font-size:12px;letter-spacing:.16em;color:rgba(255,255,255,.85)">ROOM CODE</div>
+    <div id="joinCode">····</div>
+    <div class="slots">
+      <div class="slot"><div class="dot" id="slot0dot" style="background:#FF5A5F"></div><div class="who" id="slot0">Fighter 1<br><small style="font-weight:800;color:#b9b0d6">waiting…</small></div></div>
+      <div class="slot"><div class="dot" id="slot1dot" style="background:#6fd3ff"></div><div class="who" id="slot1">Fighter 2<br><small style="font-weight:800;color:#b9b0d6">waiting…</small></div></div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+      <button id="startBtn" class="cta" style="display:none">⚔️ START DUEL</button>
+      <button id="botBtn" class="cta">🤖 PRACTICE vs BOT</button>
+    </div>
+    <div class="hint">Two phones scan in — swing to slash, hold BLOCK to parry. First to win 2 rounds takes the match.</div>
+    <div id="hostNetStatus">Starting connection service…</div>
+  </div>
+  <div id="hud">
+    <div class="hpwrap">
+      <div class="hpside left">
+        <div class="hpname"><span class="pdot" style="background:#FF5A5F"></span><span id="n0">Fighter 1</span></div>
+        <div class="hpbar"><div class="hpfill" id="hp0" style="background:#FF5A5F"></div></div>
+        <div class="pips" id="pips0"></div>
+      </div>
+      <div class="hpside right">
+        <div class="hpname"><span id="n1">Fighter 2</span><span class="pdot" style="background:#6fd3ff"></span></div>
+        <div class="hpbar"><div class="hpfill" id="hp1" style="background:#6fd3ff"></div></div>
+        <div class="pips" id="pips1"></div>
+      </div>
+    </div>
+  </div>
+  <div id="roundLabel">ROUND 1</div>
+  <div id="bigMsg"></div>
+  <div id="stateMsg">Waiting for fighters</div>
+</div>
+
+<!-- PHONE -->
+<div id="phoneUI">
+  <div id="phoneStatus">Connecting…</div>
+  <button class="bigbtn" id="btnMotion" style="display:none">ENABLE MOTION SENSORS</button>
+  <div id="saberVis" style="display:none"></div>
+  <button id="blockBtn" style="display:none">🛡️ BLOCK</button>
+  <div id="phoneResult"></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  window.onerror = function(msg){
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#a00;color:#fff;padding:8px 14px;z-index:99;font-size:13px';
+    d.textContent = 'Error: ' + msg; document.body.appendChild(d);
+  };
+  var params = new URLSearchParams(location.search);
+  var joinCode = params.get('join');
+  if (joinCode) phoneMode(joinCode.toUpperCase()); else hostMode();
+
+  function makeCode(){ var c='ABCDEFGHJKMNPQRSTUVWXYZ23456789', s=''; for (var i=0;i<4;i++) s+=c[Math.floor(Math.random()*c.length)]; return s; }
+
+  /* ================= HOST ================= */
+  function hostMode(){
+    document.getElementById('hostUI').style.display='block';
+    var code = makeCode();
+    document.getElementById('joinCode').textContent = code;
+    var qrEl = document.getElementById('qr');
+    var joinUrl = new URL(location.href); joinUrl.searchParams.set('join', code); joinUrl.hash='';
+    try { if (typeof QRCode==='undefined') throw 0; new QRCode(qrEl, { text:joinUrl.toString(), width:210, height:210 }); }
+    catch(e){ qrEl.innerHTML = '<img width="210" height="210" src="https://api.qrserver.com/v1/create-qr-code/?size=210x210&data='+encodeURIComponent(joinUrl.toString())+'">'; }
+    var netStatus = document.getElementById('hostNetStatus');
+    var stateMsg = document.getElementById('stateMsg');
+    var bigMsg = document.getElementById('bigMsg');
+
+    /* ---- audio ---- */
+    var AC=null;
+    function actx(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(AC&&AC.state==='suspended')AC.resume(); return AC; }
+    addEventListener('pointerdown', actx);
+    function beep(f,dur,type,g,at){ var c=actx(); if(!c)return; var t=c.currentTime+(at||0); var o=c.createOscillator(),ga=c.createGain();
+      o.type=type||'sine'; o.frequency.value=f; ga.gain.setValueAtTime(g||.2,t); ga.gain.exponentialRampToValueAtTime(.001,t+dur);
+      o.connect(ga); ga.connect(c.destination); o.start(t); o.stop(t+dur+.02); }
+    function noise(dur,g,fc,at){ var c=actx(); if(!c)return; var t=c.currentTime+(at||0); var b=c.createBuffer(1,Math.max(1,c.sampleRate*dur),c.sampleRate);
+      var d=b.getChannelData(0); for(var i=0;i<d.length;i++)d[i]=Math.random()*2-1; var n=c.createBufferSource(); n.buffer=b;
+      var f=c.createBiquadFilter(); f.type='bandpass'; f.frequency.value=fc||1200; var ga=c.createGain(); ga.gain.setValueAtTime(g||.2,t);
+      ga.gain.exponentialRampToValueAtTime(.001,t+dur); n.connect(f); f.connect(ga); ga.connect(c.destination); n.start(t); }
+    function sfx(name){
+      if(name==='hum'){ return; }
+      if(name==='swing'){ noise(.18,.18,900); beep(320,.14,'sawtooth',.08); }
+      else if(name==='clash'){ noise(.14,.3,2600); beep(1400,.1,'square',.14); beep(900,.12,'square',.1,.02); }
+      else if(name==='hit'){ noise(.2,.3,500); beep(150,.2,'sawtooth',.16); }
+      else if(name==='ko'){ beep(200,.5,'sawtooth',.2); noise(.6,.16,700,.05); }
+      else if(name==='cheer'){ [523,659,784,1046].forEach(function(f,i){ beep(f,.3,'triangle',.14,i*.09); }); }
+      else if(name==='count'){ beep(440,.16,'square',.18); }
+    }
+
+    /* ---- three.js ---- */
+    var scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x2a2340);
+    scene.fog = new THREE.Fog(0x2a2340, 22, 60);
+    var camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, .1, 200);
+    camera.position.set(0, 3.4, 12.5); camera.lookAt(0, 1.7, 0);
+    var renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setSize(innerWidth, innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.getElementById('canvasWrap').appendChild(renderer.domElement);
+    addEventListener('resize', function(){ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+    scene.add(new THREE.HemisphereLight(0xa98fff, 0x221a33, .9));
+    var key = new THREE.DirectionalLight(0xfff0e0, 1.0); key.position.set(6,12,8); key.castShadow=true;
+    key.shadow.mapSize.set(2048,2048); key.shadow.camera.left=-12; key.shadow.camera.right=12; key.shadow.camera.top=12; key.shadow.camera.bottom=-12;
+    scene.add(key);
+    var rim0 = new THREE.PointLight(0xff5a5f, .5, 30); rim0.position.set(-6,3,4); scene.add(rim0);
+    var rim1 = new THREE.PointLight(0x6fd3ff, .5, 30); rim1.position.set(6,3,4); scene.add(rim1);
+
+    // arena platform
+    var stage = new THREE.Mesh(new THREE.CylinderGeometry(7,7.6,.7,48), new THREE.MeshStandardMaterial({color:0x3a3350, roughness:.9}));
+    stage.position.y=-.35; stage.receiveShadow=true; scene.add(stage);
+    var ring = new THREE.Mesh(new THREE.TorusGeometry(7,.16,10,60), new THREE.MeshStandardMaterial({color:0xFFC93C, emissive:0x3a2a00, roughness:.5}));
+    ring.rotation.x=Math.PI/2; ring.position.y=.02; scene.add(ring);
+    (function(){ // sparkly backdrop dots
+      for (var i=0;i<60;i++){ var s=new THREE.Mesh(new THREE.SphereGeometry(.06,6,6), new THREE.MeshBasicMaterial({color:0xffffff}));
+        s.position.set((Math.random()-.5)*50, Math.random()*22-2, -12-Math.random()*24); s.material.opacity=.5; s.material.transparent=true; scene.add(s); } })();
+
+    /* ---- GoGo mascot + saber ---- */
+    var navy = new THREE.MeshStandardMaterial({color:0x10233F, roughness:.5});
+    var white = new THREE.MeshStandardMaterial({color:0xffffff, roughness:.45});
+    function skin(c){ return new THREE.MeshStandardMaterial({color:c, roughness:.55}); }
+    function makeFace(s){
+      var f=new THREE.Group();
+      [-1,1].forEach(function(sx){
+        var eye=new THREE.Mesh(new THREE.SphereGeometry(.12*s,18,18), new THREE.MeshStandardMaterial({color:0xffffff,roughness:.25}));
+        eye.scale.set(1,1.3,.5); eye.position.set(sx*.15*s,.02*s,.02*s); f.add(eye);
+        var pup=new THREE.Mesh(new THREE.SphereGeometry(.066*s,14,14), navy); pup.scale.set(1,1.15,.6); pup.position.set(sx*.15*s,0,.07*s); f.add(pup);
+        var gl=new THREE.Mesh(new THREE.SphereGeometry(.022*s,8,8), new THREE.MeshBasicMaterial({color:0xffffff})); gl.position.set(sx*.15*s+.03*s,.06*s,.11*s); f.add(gl);
+        var bl=new THREE.Mesh(new THREE.CircleGeometry(.07*s,16), new THREE.MeshBasicMaterial({color:0xFF5A5F,transparent:true,opacity:.5})); bl.position.set(sx*.28*s,-.1*s,.06*s); f.add(bl);
+      });
+      var sm=new THREE.Mesh(new THREE.TorusGeometry(.09*s,.02*s,10,20,Math.PI), navy); sm.rotation.z=Math.PI; sm.position.set(0,-.085*s,.05*s); f.add(sm);
+      return f;
+    }
+    function makeGoGo(color){
+      var g=new THREE.Group(); var r=.62,h=1.15;
+      var cyl=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,28), skin(color)); cyl.position.y=r+h/2; cyl.castShadow=true; g.add(cyl);
+      var top=new THREE.Mesh(new THREE.SphereGeometry(r,24,18), skin(color)); top.position.y=r+h; top.castShadow=true; g.add(top);
+      var bot=new THREE.Mesh(new THREE.SphereGeometry(r,24,18), skin(color)); bot.position.y=r; bot.castShadow=true; g.add(bot);
+      // feet
+      [-.3,.3].forEach(function(x){ var s=new THREE.Mesh(new THREE.SphereGeometry(.2,14,14),white); s.scale.set(1,.55,1.5); s.position.set(x,.13,.12); s.castShadow=true; g.add(s); });
+      // sprout
+      var stalk=new THREE.Mesh(new THREE.CylinderGeometry(.045,.055,.26,8), skin(0x2FBF71)); stalk.position.y=r+h+r+.11; g.add(stalk);
+      [.13,-.13].forEach(function(lx){ var l=new THREE.Mesh(new THREE.SphereGeometry(.14,12,10), skin(0x36c977)); l.scale.set(1.5,.55,1); l.rotation.z=lx>0?.5:-.5; l.position.set(lx,r+h+r+.28,0); g.add(l); });
+      // face
+      var f=makeFace(1.18); f.position.set(0,r+h+.05,r-.02); g.add(f);
+      // off hand mitt
+      var offMitt=new THREE.Mesh(new THREE.SphereGeometry(.16,14,14),white); offMitt.position.set(-(r+.02), r+.42, .12); offMitt.castShadow=true; g.add(offMitt);
+      return { group:g, face:f };
+    }
+    function makeSaber(color){
+      var g=new THREE.Group();
+      var hilt=new THREE.Mesh(new THREE.CylinderGeometry(.09,.08,.5,12), new THREE.MeshStandardMaterial({color:0xcfd3d8, metalness:.6, roughness:.3}));
+      hilt.position.y=.25; g.add(hilt);
+      var blade=new THREE.Mesh(new THREE.CylinderGeometry(.09,.07,2.2,14), new THREE.MeshBasicMaterial({color:color}));
+      blade.position.y=.5+1.1; g.add(blade);
+      var glow=new THREE.Mesh(new THREE.CylinderGeometry(.2,.16,2.3,14), new THREE.MeshBasicMaterial({color:color, transparent:true, opacity:.28}));
+      glow.position.y=.5+1.1; g.add(glow);
+      var tip=new THREE.Mesh(new THREE.SphereGeometry(.12,12,12), new THREE.MeshBasicMaterial({color:0xffffff})); tip.position.y=.5+2.2; g.add(tip);
+      var light=new THREE.PointLight(color, .8, 8); light.position.y=1.4; g.add(light);
+      return g;
+    }
+
+    // spark burst pool for clashes
+    var SPK_N=30; var spkGeo=new THREE.BufferGeometry(); var spkPos=new Float32Array(SPK_N*3); var spkVel=[]; var spkLife=new Float32Array(SPK_N);
+    for(var si=0;si<SPK_N;si++) spkVel.push(new THREE.Vector3());
+    spkGeo.setAttribute('position', new THREE.BufferAttribute(spkPos,3));
+    var spkPts=new THREE.Points(spkGeo, new THREE.PointsMaterial({color:0xfff2b0, size:.22, transparent:true})); spkPts.visible=false; scene.add(spkPts);
+    function sparks(x,y,z){ for(var i=0;i<SPK_N;i++){ spkLife[i]=.3+Math.random()*.3; var a=Math.random()*Math.PI*2, sp=3+Math.random()*5;
+      spkVel[i].set(Math.cos(a)*sp,2+Math.random()*4,(Math.random()-.5)*3); spkPos[i*3]=x; spkPos[i*3+1]=y; spkPos[i*3+2]=z; }
+      spkPts.visible=true; spkGeo.attributes.position.needsUpdate=true; }
+
+    /* ---- fighters ---- */
+    var COL=[0xFF5A5F, 0x6fd3ff]; var COLHEX=['#FF5A5F','#6fd3ff']; var SABERCOL=[0xff5a5f,0x6fd3ff];
+    var HOMEX=3.0;
+    var fighters=[]; // {i,conn,bot,mesh,face,saberPivot,saber,hp,wins,blocking,tilt,attackUntil,cooldownUntil,strikeAt,strikePending,staggerUntil,ko,lungeT,botNext}
+    function makeFighter(i){
+      var m=makeGoGo(COL[i]);
+      var face=i===0?1:-1; // faces the other way
+      m.group.rotation.y = i===0 ? Math.PI/2 : -Math.PI/2; // face center
+      m.group.position.set(-HOMEX*(i===0?1:-1)*-1, 0, 0); // set below
+      m.group.position.x = i===0 ? -HOMEX : HOMEX;
+      scene.add(m.group);
+      // saber held in the near hand, pivot at shoulder height on the inner side
+      var pivot=new THREE.Group();
+      pivot.position.set(i===0 ? (0.62+0.05) : -(0.62+0.05), 0.95, 0.2);
+      var saber=makeSaber(SABERCOL[i]); pivot.add(saber);
+      m.group.add(pivot);
+      var f={ i:i, conn:null, bot:false, mesh:m.group, face:m.face, saberPivot:pivot, saber:saber,
+        hp:100, wins:0, blocking:false, tilt:0, attackUntil:0, cooldownUntil:0, strikeAt:0, strikePending:false,
+        staggerUntil:0, ko:false, lungeT:0, botNext:0, dir:(i===0?1:-1) };
+      fighters[i]=f; return f;
+    }
+    makeFighter(0); makeFighter(1);
+
+    /* ---- HUD ---- */
+    function renderPips(){
+      [0,1].forEach(function(i){ var el=document.getElementById('pips'+i); if(!el)return;
+        el.innerHTML=''; for(var p=0;p<2;p++){ var d=document.createElement('div'); d.className='pip'+(fighters[i].wins>p?' win':''); el.appendChild(d); } });
+    }
+    function updateHUD(){
+      document.getElementById('hp0').style.width=Math.max(0,fighters[0].hp)+'%';
+      document.getElementById('hp1').style.width=Math.max(0,fighters[1].hp)+'%';
+    }
+    function setName(i, nm){ document.getElementById('n'+i).textContent=nm; }
+    function slotFilled(i, label){
+      document.getElementById('slot'+i).innerHTML = label + '<br><small style="font-weight:800;color:#7CFC00">ready ✔</small>';
+    }
+
+    /* ---- connections ---- */
+    var peer=new Peer('gosaber-'+code, { debug:1 });
+    peer.on('open', function(){ netStatus.textContent='Ready — up to 2 phones can scan.'; });
+    peer.on('error', function(e){ netStatus.textContent='Connection error: '+e.type+' (refresh to retry)'; });
+    peer.on('connection', function(c){
+      c.on('open', function(){
+        var idx = (!fighters[0].conn && !fighters[0].bot) ? 0 : ((!fighters[1].conn && !fighters[1].bot) ? 1 : -1);
+        if (idx<0){ try{ c.send({t:'spectate'}); }catch(e){} return; }
+        fighters[idx].conn=c; fighters[idx].bot=false;
+        slotFilled(idx, 'Fighter '+(idx+1));
+        try{ c.send({ t:'assigned', i:idx, color:COLHEX[idx] }); }catch(e){}
+        maybeShowStart();
+        stateMsg.textContent='Fighter '+(idx+1)+' ready!';
+      });
+      c.on('data', function(msg){ var idx=(fighters[0].conn===c)?0:(fighters[1].conn===c?1:-1); if(idx>=0) onData(msg, idx); });
+      c.on('close', function(){ [0,1].forEach(function(i){ if(fighters[i].conn===c){ fighters[i].conn=null;
+        document.getElementById('slot'+i).innerHTML='Fighter '+(i+1)+'<br><small style="font-weight:800;color:#b9b0d6">waiting…</small>'; } }); });
+    });
+    function humanCount(){ return fighters.filter(function(f){ return f.conn||f.bot; }).length; }
+    function maybeShowStart(){ document.getElementById('startBtn').style.display = humanCount()>=2 ? 'inline-block' : 'none'; }
+    document.getElementById('botBtn').addEventListener('click', function(){
+      var idx = (!fighters[0].conn && !fighters[0].bot) ? 0 : 1;
+      fighters[idx].bot=true; slotFilled(idx,'🤖 Bot');
+      maybeShowStart(); if (humanCount()>=2) startMatch();
+    });
+    document.getElementById('startBtn').addEventListener('click', function(){ if(humanCount()>=2) startMatch(); });
+
+    function send(f,msg){ if(f.conn){ try{ f.conn.send(msg); }catch(e){} } }
+
+    /* ---- match / rounds ---- */
+    var phase='lobby'; // lobby | count | fighting | roundover | matchover
+    var round=1, countStart=0, lastCount=-1, resolveAt=0;
+    function resetFighters(){
+      fighters.forEach(function(f){ f.hp=100; f.ko=false; f.blocking=false; f.attackUntil=0; f.cooldownUntil=0; f.strikePending=false; f.staggerUntil=0;
+        f.mesh.position.x = f.i===0?-HOMEX:HOMEX; f.mesh.rotation.z=0; });
+      updateHUD();
+    }
+    function startMatch(){
+      fighters[0].wins=0; fighters[1].wins=0; round=1;
+      document.getElementById('connectPanel').style.display='none';
+      document.getElementById('logo').style.display='none';
+      document.getElementById('hud').style.display='block';
+      document.getElementById('roundLabel').style.display='block';
+      renderPips(); startRound();
+    }
+    function startRound(){
+      resetFighters();
+      document.getElementById('roundLabel').textContent='ROUND '+round;
+      phase='count'; countStart=performance.now(); lastCount=-1;
+      bigMsg.style.display='block';
+      [0,1].forEach(function(i){ send(fighters[i],{t:'phase',p:'count'}); });
+    }
+    function endRound(winner){
+      phase='roundover';
+      fighters[winner].wins++; renderPips();
+      sfx('ko'); setTimeout(function(){ sfx('cheer'); }, 300);
+      var loser=1-winner; fighters[loser].ko=true;
+      bigMsg.innerHTML = 'K.O.!<br><span style="font-size:34px;color:'+COLHEX[winner]+'">Fighter '+(winner+1)+' wins round '+round+'</span>';
+      bigMsg.style.display='block';
+      stateMsg.textContent='Round '+round+' to Fighter '+(winner+1);
+      [0,1].forEach(function(i){ send(fighters[i],{t:'result',line:(i===winner?'🏆 You won the round!':'💥 K.O.!')}); send(fighters[i],{t:'phase',p:'roundover'}); });
+      if (fighters[winner].wins>=2){
+        setTimeout(function(){ matchOver(winner); }, 2400);
+      } else {
+        round++; setTimeout(function(){ if(phase==='roundover'){ bigMsg.style.display='none'; startRound(); } }, 2600);
+      }
+    }
+    function matchOver(winner){
+      phase='matchover';
+      try{ var rec=+localStorage.getItem('gosaber_best')||0; }catch(e){}
+      bigMsg.innerHTML='🏆 FIGHTER '+(winner+1)+' WINS!<br><span style="font-size:30px;color:'+COLHEX[winner]+'">'+fighters[winner].wins+' – '+fighters[1-winner].wins+'</span><br><span style="font-size:20px;color:#e8e0ff">tap READY on a phone to rematch</span>';
+      bigMsg.style.display='block';
+      stateMsg.textContent='Match over — Fighter '+(winner+1)+' is the champion';
+      [0,1].forEach(function(i){ send(fighters[i],{t:'result',line:(i===winner?'👑 CHAMPION!':'good duel!')}); send(fighters[i],{t:'phase',p:'matchover'}); });
+    }
+
+    function onData(msg, i){
+      if(!msg||!msg.t) return; var f=fighters[i];
+      if(msg.t==='tilt'){ f.tilt = Math.max(-1,Math.min(1,msg.a||0)); }
+      else if(msg.t==='guard'){ f.blocking = !!msg.on && phase==='fighting' && !f.ko; }
+      else if(msg.t==='swing'){ tryAttack(f); }
+      else if(msg.t==='ready'){ if(phase==='matchover'){ document.getElementById('bigMsg').style.display='none'; startMatch(); } }
+    }
+    function tryAttack(f){
+      var now=performance.now();
+      if(phase!=='fighting'||f.ko||f.blocking) return;
+      if(now<f.cooldownUntil||now<f.staggerUntil) return;
+      f.attackUntil=now+380; f.cooldownUntil=now+640; f.lungeT=now; f.strikeAt=now+140; f.strikePending=true;
+      sfx('swing'); send(f,{t:'buzz'});
+    }
+    function resolveStrike(f){
+      f.strikePending=false; var opp=fighters[1-f.i]; var now=performance.now();
+      // strike lands roughly where the sabers meet (center-ish, biased to opponent)
+      var mx=(f.mesh.position.x+opp.mesh.position.x)/2;
+      if(opp.blocking){
+        sparks(mx, 2.0, .4); sfx('clash');
+        f.staggerUntil=now+180; opp.staggerUntil=now+180;
+      } else if(!opp.ko){
+        opp.hp-=22; sparks(opp.mesh.position.x - f.dir*.6, 2.0, .3); sfx('hit');
+        opp.staggerUntil=now+420; updateHUD();
+        if(opp.hp<=0){ opp.hp=0; updateHUD(); endRound(f.i); }
+      }
+    }
+
+    /* ---- test hooks ---- */
+    window._gs = {
+      state:function(){ return { phase:phase, round:round, fighters:fighters.map(function(f){ return {hp:f.hp,wins:f.wins,blocking:f.blocking,ko:f.ko,bot:f.bot,conn:!!f.conn}; }) }; },
+      bot:function(i){ i=i||0; fighters[i].bot=true; slotFilled(i,'🤖 Bot'); maybeShowStart(); },
+      start:function(){ fighters.forEach(function(f,i){ if(!f.conn&&!f.bot){ f.bot=true; slotFilled(i,'🤖 Bot'); } }); startMatch(); },
+      swing:function(i){ tryAttack(fighters[i||0]); },
+      guard:function(i,on){ fighters[i||0].blocking=!!on; },
+      tilt:function(i,a){ fighters[i||0].tilt=a; },
+      fast:function(){ window.__gsFast=true; },
+      render:function(){ renderer.render(scene,camera); }
+    };
+
+    /* ---- bot AI ---- */
+    function botThink(f, now){
+      if(!f.bot||phase!=='fighting'||f.ko) return;
+      var opp=fighters[1-f.i];
+      // react: if opponent is mid-attack, sometimes block
+      if(opp.attackUntil>now && !f.blocking && Math.random()<.12){ f.blocking=true; f.__unblock=now+300+Math.random()*250; }
+      if(f.blocking && f.__unblock && now>f.__unblock){ f.blocking=false; }
+      if(now>f.botNext && !f.blocking && now>f.cooldownUntil){
+        f.tilt = (Math.random()-.5)*1.6;
+        if(Math.random()<.7) tryAttack(f);
+        f.botNext = now + 550 + Math.random()*700;
+      }
+    }
+
+    /* ---- loop ---- */
+    var last=performance.now();
+    var clockWorker=null;
+    try{ var wb=new Blob(['setInterval(function(){postMessage(0)},33)'],{type:'text/javascript'}); clockWorker=new Worker(URL.createObjectURL(wb)); clockWorker.onmessage=function(){ if(document.hidden) tick(performance.now()); }; }catch(e){}
+    var rafP=false;
+    function schedule(){ if(!document.hidden&&!rafP){ rafP=true; requestAnimationFrame(function(n){ rafP=false; tick(n); }); } }
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden){ last=performance.now(); schedule(); } });
+
+    function tick(now){
+      schedule(); var dt=Math.min((now-last)/1000,.1); last=now;
+
+      if(phase==='count'){
+        var n=3-Math.floor((now-countStart)/700);
+        if(n!==lastCount && n>0){ lastCount=n; sfx('count'); }
+        if((now-countStart)<2100){ bigMsg.textContent=n>0?n:'⚔️'; }
+        else { phase='fighting'; bigMsg.textContent='FIGHT!'; sfx('cheer'); setTimeout(function(){ if(phase==='fighting') bigMsg.style.display='none'; },700);
+          stateMsg.textContent='Swing to slash · hold BLOCK to parry'; [0,1].forEach(function(i){ send(fighters[i],{t:'phase',p:'fighting'}); }); }
+      }
+
+      fighters.forEach(function(f){
+        botThink(f, now);
+        if(f.strikePending && now>=f.strikeAt) resolveStrike(f);
+        // saber pose: guard (horizontal), swing (arc), or follow tilt
+        var target;
+        if(f.attackUntil>now){ var k=1-((f.attackUntil-now)/380); target = -1.1 + k*2.4; } // sweep down
+        else if(f.blocking){ target = -Math.PI/2 + .15; } // raise across
+        else { target = f.tilt*0.9 - .2; } // idle/aim
+        f.saberPivot.rotation.z += (target - f.saberPivot.rotation.z) * Math.min(1, dt*18);
+        // lunge on attack
+        var lunge = (f.attackUntil>now) ? Math.sin((1-((f.attackUntil-now)/380))*Math.PI)*0.7 : 0;
+        var homeX = f.i===0?-HOMEX:HOMEX;
+        var kb = (now<f.staggerUntil && f.attackUntil<=now) ? -0.5 : 0; // knocked back if staggered (not attacking)
+        f.mesh.position.x += ((homeX + f.dir*lunge + f.dir*kb) - f.mesh.position.x) * Math.min(1, dt*12);
+        // stagger lean / ko
+        var leanTarget = f.ko ? f.dir*1.2 : (now<f.staggerUntil ? f.dir*0.35 : 0);
+        f.mesh.rotation.z += (leanTarget - f.mesh.rotation.z) * Math.min(1, dt*10);
+        f.mesh.position.y = f.ko ? Math.max(0, f.mesh.position.y - dt*2) : (Math.sin(now*.004+f.i)* .04);
+        // saber brighter when blocking
+        f.saber.children[1].material.color.setHex(f.blocking ? 0xffffff : SABERCOL[f.i]);
+      });
+
+      // sparks update
+      if(spkPts.visible){ var any=false, mo=0; for(var i=0;i<SPK_N;i++){ if(spkLife[i]>0){ any=true; spkLife[i]-=dt; if(spkLife[i]>mo)mo=spkLife[i];
+        spkVel[i].y-=14*dt; spkPos[i*3]+=spkVel[i].x*dt; spkPos[i*3+1]=Math.max(.05,spkPos[i*3+1]+spkVel[i].y*dt); spkPos[i*3+2]+=spkVel[i].z*dt; } }
+        spkPts.material.opacity=Math.max(0,Math.min(1,mo*3)); spkGeo.attributes.position.needsUpdate=true; if(!any)spkPts.visible=false; }
+
+      // gentle idle camera sway
+      camera.position.x = Math.sin(now*.0003)*0.6;
+      camera.lookAt(0,1.7,0);
+      if(!document.hidden) renderer.render(scene,camera);
+    }
+    schedule();
+  }
+
+  /* ================= PHONE ================= */
+  function phoneMode(code){
+    var ui=document.getElementById('phoneUI'); ui.style.display='flex';
+    var status=document.getElementById('phoneStatus');
+    var btnMotion=document.getElementById('btnMotion');
+    var saberVis=document.getElementById('saberVis');
+    var blockBtn=document.getElementById('blockBtn');
+    var result=document.getElementById('phoneResult');
+    var myColor='#FF5A5F', myIdx=0;
+
+    var conn=null, connected=false;
+    var peer=new Peer({ debug:1 });
+    peer.on('open', function(){
+      conn=peer.connect('gosaber-'+code, { reliable:false });
+      conn.on('open', function(){ connected=true; status.textContent='Connected ✔'; btnMotion.style.display='block'; });
+      conn.on('data', function(msg){
+        if(!msg) return;
+        if(msg.t==='assigned'){ myIdx=msg.i; myColor=msg.color; status.textContent='You are Fighter '+(myIdx+1);
+          saberVis.style.background='linear-gradient(#fff,'+myColor+')'; saberVis.style.boxShadow='0 0 26px '+myColor; }
+        if(msg.t==='spectate'){ status.textContent='Duel is full — you\'re spectating on the big screen'; }
+        if(msg.t==='result'){ result.textContent=msg.line; if(navigator.vibrate) navigator.vibrate(120); }
+        if(msg.t==='buzz'){ if(navigator.vibrate) navigator.vibrate(30); }
+        if(msg.t==='phase'){ if(msg.p==='fighting'){ result.textContent=''; } if(msg.p==='matchover'){ result.textContent='tap to rematch'; } }
+      });
+      conn.on('close', function(){ status.textContent='Disconnected — refresh.'; connected=false; });
+    });
+    peer.on('error', function(e){ status.textContent='Could not connect ('+e.type+').'; });
+
+    function send(m){ if(conn&&connected){ try{ conn.send(m); }catch(e){} } }
+
+    // block button (hold)
+    function guard(on){ blockBtn.classList.toggle('on',on); send({t:'guard',on:on}); }
+    blockBtn.addEventListener('touchstart', function(e){ e.preventDefault(); guard(true); }, {passive:false});
+    blockBtn.addEventListener('touchend', function(e){ e.preventDefault(); guard(false); }, {passive:false});
+    blockBtn.addEventListener('mousedown', function(){ guard(true); });
+    blockBtn.addEventListener('mouseup', function(){ guard(false); });
+    blockBtn.addEventListener('mouseleave', function(){ if(blockBtn.classList.contains('on')) guard(false); });
+    // tap result area to send ready (rematch)
+    result.addEventListener('click', function(){ send({t:'ready'}); });
+
+    btnMotion.addEventListener('click', function(){
+      var asks=[];
+      if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function') asks.push(DeviceMotionEvent.requestPermission());
+      if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function') asks.push(DeviceOrientationEvent.requestPermission());
+      Promise.all(asks.length?asks:[Promise.resolve('granted')]).then(function(res){
+        if(res.every(function(r){return r==='granted';})){ startSensors(); btnMotion.style.display='none'; saberVis.style.display='block'; blockBtn.style.display='block';
+          status.textContent='Saber live ✔'; }
+        else status.textContent='Motion denied — enable in Settings.';
+      }).catch(function(){ status.textContent='Motion needs HTTPS.'; });
+    });
+
+    function startSensors(){
+      var lastSend=0, cooldown=0, tiltA=0;
+      addEventListener('deviceorientation', function(e){
+        // gamma: left-right tilt when held upright → saber aim
+        var g=(e.gamma||0)/60; tiltA=Math.max(-1,Math.min(1,g));
+        saberVis.style.transform='rotate('+(tiltA*55)+'deg)';
+        var now=performance.now(); if(now-lastSend>60){ lastSend=now; send({t:'tilt',a:tiltA}); }
+      });
+      addEventListener('devicemotion', function(e){
+        var now=performance.now(); if(now<cooldown) return;
+        var acc=e.acceleration||e.accelerationIncludingGravity; if(!acc) return;
+        var mag=Math.sqrt((acc.x||0)*(acc.x||0)+(acc.y||0)*(acc.y||0)+(acc.z||0)*(acc.z||0));
+        if(!e.acceleration) mag=Math.max(0,mag-9.81);
+        if(mag>16){ // a swing!
+          cooldown=now+380; send({t:'swing'});
+          saberVis.animate ? saberVis.animate([{transform:'rotate(-40deg) scaleY(1.1)'},{transform:'rotate('+(tiltA*55)+'deg) scaleY(1)'}],{duration:260}) : 0;
+          if(navigator.vibrate) navigator.vibrate(40);
+        }
+      });
+    }
+  }
+})();
+</script>
+</body>
+</html>
