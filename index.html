@@ -73,6 +73,12 @@
     border:4px solid #10233F; border-radius:24px; background:#10233F; color:#fff; box-shadow:0 7px 0 #000; user-select:none; -webkit-user-select:none; }
   #blockBtn.on { background:#6fd3ff; color:#10233F; transform:translateY(4px); box-shadow:0 3px 0 rgba(0,0,0,.4); }
   #phoneResult { font-family:'Fredoka',sans-serif; font-size:30px; font-weight:700; color:#fff; min-height:38px; text-shadow:0 3px 0 #10233F; }
+  /* split-screen dividers + side tags */
+  #saberDiv { display:none; position:fixed; top:0; bottom:0; left:50%; width:5px; margin-left:-2.5px; background:#10233F; z-index:16; box-shadow:0 0 0 1px rgba(0,0,0,.4); }
+  .sideTag { display:none; position:fixed; bottom:60px; z-index:17; font-family:'Fredoka',sans-serif; font-weight:700; font-size:15px;
+    color:#fff; background:rgba(16,35,63,.7); border:2px solid #10233F; padding:5px 14px; border-radius:100px; pointer-events:none; }
+  #sideTagL { left:calc(25% - 60px); }
+  #sideTagR { right:calc(25% - 60px); }
 </style>
 </head>
 <body>
@@ -97,6 +103,10 @@
       <button id="botBtn" class="cta">🤖 PRACTICE vs BOT</button>
     </div>
     <div class="hint">Two phones scan in — swing to slash, hold BLOCK to parry. First to win 2 rounds takes the match.</div>
+    <div style="display:flex;gap:8px;">
+      <a href="https://gogaminginc.github.io/gogolf/" style="background:#2FBF71;color:#fff;text-decoration:none;font-weight:900;font-size:13px;padding:8px 16px;border:2px solid #10233F;border-radius:100px;">⛳ GOGOLF</a>
+      <a href="https://gogaminginc.github.io/gokart/" style="background:#FF5A5F;color:#fff;text-decoration:none;font-weight:900;font-size:13px;padding:8px 16px;border:2px solid #10233F;border-radius:100px;">🏎️ GOKART</a>
+    </div>
     <div id="hostNetStatus">Starting connection service…</div>
   </div>
   <div id="hud">
@@ -114,6 +124,9 @@
     </div>
   </div>
   <div id="roundLabel">ROUND 1</div>
+  <div id="saberDiv"></div>
+  <div id="sideTagL" class="sideTag">◀ FIGHTER 1</div>
+  <div id="sideTagR" class="sideTag right">FIGHTER 2 ▶</div>
   <div id="bigMsg"></div>
   <div id="stateMsg">Waiting for fighters</div>
 </div>
@@ -186,6 +199,32 @@
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.getElementById('canvasWrap').appendChild(renderer.domElement);
     addEventListener('resize', function(){ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+    // per-fighter cameras for split-screen — each looks across at the opponent from that fighter's side
+    var viewL=new THREE.PerspectiveCamera(52, 1, .1, 200);
+    var viewR=new THREE.PerspectiveCamera(52, 1, .1, 200);
+    viewL.position.set(-6.6, 3.1, 9.2); viewL.lookAt(0.7, 1.5, 0);
+    viewR.position.set(6.6, 3.1, 9.2); viewR.lookAt(-0.7, 1.5, 0);
+    function splitActive(){ return humanCount()>=2 && (phase==='fighting'||phase==='count'||phase==='roundover'||phase==='matchover'); }
+    function renderScene(now){
+      var W=innerWidth, H=innerHeight;
+      var tagL=document.getElementById('sideTagL'), tagR=document.getElementById('sideTagR'), div=document.getElementById('saberDiv');
+      if(splitActive()){
+        var hw=Math.floor(W/2);
+        var sway=Math.sin(now*.0004)*0.25;
+        renderer.setScissorTest(true);
+        viewL.position.z=9.2+sway; viewL.aspect=hw/H; viewL.updateProjectionMatrix();
+        renderer.setViewport(0,0,hw,H); renderer.setScissor(0,0,hw,H); renderer.render(scene,viewL);
+        viewR.position.z=9.2-sway; viewR.aspect=(W-hw)/H; viewR.updateProjectionMatrix();
+        renderer.setViewport(hw,0,W-hw,H); renderer.setScissor(hw,0,W-hw,H); renderer.render(scene,viewR);
+        renderer.setScissorTest(false); renderer.setViewport(0,0,W,H);
+        div.style.display='block'; tagL.style.display='block'; tagR.style.display='block';
+      } else {
+        camera.position.x=Math.sin(now*.0003)*0.6; camera.lookAt(0,1.7,0);
+        camera.aspect=W/H; camera.updateProjectionMatrix();
+        renderer.setViewport(0,0,W,H); renderer.render(scene,camera);
+        div.style.display='none'; tagL.style.display='none'; tagR.style.display='none';
+      }
+    }
 
     scene.add(new THREE.HemisphereLight(0xa98fff, 0x221a33, .9));
     var key = new THREE.DirectionalLight(0xfff0e0, 1.0); key.position.set(6,12,8); key.castShadow=true;
@@ -448,12 +487,12 @@
         if(f.strikePending && now>=f.strikeAt) resolveStrike(f);
         // saber pose: guard (horizontal), swing (arc), or follow tilt
         var target;
-        if(f.attackUntil>now){ var k=1-((f.attackUntil-now)/380); target = -1.1 + k*2.4; } // sweep down
+        if(f.attackUntil>now){ var k=1-((f.attackUntil-now)/380); target = -1.5 + k*3.2; } // big slash toward opponent
         else if(f.blocking){ target = -Math.PI/2 + .15; } // raise across
         else { target = f.tilt*0.9 - .2; } // idle/aim
-        f.saberPivot.rotation.z += (target - f.saberPivot.rotation.z) * Math.min(1, dt*18);
-        // lunge on attack
-        var lunge = (f.attackUntil>now) ? Math.sin((1-((f.attackUntil-now)/380))*Math.PI)*0.7 : 0;
+        f.saberPivot.rotation.z += (target - f.saberPivot.rotation.z) * Math.min(1, dt*22);
+        // lunge on attack — steps in toward the opponent
+        var lunge = (f.attackUntil>now) ? Math.sin((1-((f.attackUntil-now)/380))*Math.PI)*1.0 : 0;
         var homeX = f.i===0?-HOMEX:HOMEX;
         var kb = (now<f.staggerUntil && f.attackUntil<=now) ? -0.5 : 0; // knocked back if staggered (not attacking)
         f.mesh.position.x += ((homeX + f.dir*lunge + f.dir*kb) - f.mesh.position.x) * Math.min(1, dt*12);
@@ -470,10 +509,8 @@
         spkVel[i].y-=14*dt; spkPos[i*3]+=spkVel[i].x*dt; spkPos[i*3+1]=Math.max(.05,spkPos[i*3+1]+spkVel[i].y*dt); spkPos[i*3+2]+=spkVel[i].z*dt; } }
         spkPts.material.opacity=Math.max(0,Math.min(1,mo*3)); spkGeo.attributes.position.needsUpdate=true; if(!any)spkPts.visible=false; }
 
-      // gentle idle camera sway
-      camera.position.x = Math.sin(now*.0003)*0.6;
-      camera.lookAt(0,1.7,0);
-      if(!document.hidden) renderer.render(scene,camera);
+      // render: split-screen during a match (each fighter their own view), single view in lobby
+      if(!document.hidden) renderScene(now);
     }
     schedule();
   }
@@ -537,16 +574,28 @@
         saberVis.style.transform='rotate('+(tiltA*55)+'deg)';
         var now=performance.now(); if(now-lastSend>60){ lastSend=now; send({t:'tilt',a:tiltA}); }
       });
+      function doSwing(now){
+        cooldown=now+300; send({t:'swing'});
+        saberVis.animate ? saberVis.animate([
+          {transform:'rotate(-52deg) scaleY(1.12)'},
+          {transform:'rotate(38deg) scaleY(1.05)'},
+          {transform:'rotate('+(tiltA*55)+'deg) scaleY(1)'}
+        ],{duration:260}) : 0;
+        if(navigator.vibrate) navigator.vibrate(45);
+      }
       addEventListener('devicemotion', function(e){
         var now=performance.now(); if(now<cooldown) return;
+        // Register a swing on EITHER a quick wrist rotation (a natural slash) OR a sharp
+        // linear jab — so you don't have to flip the phone forward to land a hit.
+        var rr=e.rotationRate;
+        if(rr){
+          var rmag=Math.abs(rr.alpha||0)+Math.abs(rr.beta||0)+Math.abs(rr.gamma||0);
+          if(rmag>300){ doSwing(now); return; }
+        }
         var acc=e.acceleration||e.accelerationIncludingGravity; if(!acc) return;
         var mag=Math.sqrt((acc.x||0)*(acc.x||0)+(acc.y||0)*(acc.y||0)+(acc.z||0)*(acc.z||0));
         if(!e.acceleration) mag=Math.max(0,mag-9.81);
-        if(mag>16){ // a swing!
-          cooldown=now+380; send({t:'swing'});
-          saberVis.animate ? saberVis.animate([{transform:'rotate(-40deg) scaleY(1.1)'},{transform:'rotate('+(tiltA*55)+'deg) scaleY(1)'}],{duration:260}) : 0;
-          if(navigator.vibrate) navigator.vibrate(40);
-        }
+        if(mag>12){ doSwing(now); }
       });
     }
   }
